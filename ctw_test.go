@@ -1,8 +1,12 @@
 package ctw
 
 import (
+	"io/ioutil"
 	"math"
+	"sync"
 	"testing"
+
+	"github.com/fumin/ctw/ac/witten"
 )
 
 // TestUpdateSunehag tests the examples in the slides by Peter Sunehag and Marcus Hutter
@@ -63,5 +67,79 @@ func TestSeqProbNoUpdate(t *testing.T) {
 		}
 
 		bits = append(bits, b)
+	}
+}
+
+func TestEncode(t *testing.T) {
+	// Prepare data
+	// x := []int{1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}
+	contents, err := ioutil.ReadFile("gettysburg.txt")
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+	x := []int{}
+	for _, bt := range contents {
+		for i := uint(0); i < 8; i++ {
+			x = append(x, int(bt)&(1<<i)>>i)
+		}
+	}
+
+	// Encode
+	src := make(chan int)
+	go func() {
+		for _, b := range x {
+			src <- b
+		}
+		close(src)
+	}()
+
+	encoded := []int{}
+	dst := make(chan int)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for b := range dst {
+			encoded = append(encoded, b)
+		}
+	}()
+
+	witten.Encode(dst, src, NewCTW(make([]int, 48)))
+	wg.Wait()
+	t.Logf("encoded bits: %d, original bits: %d", len(encoded), len(x))
+
+	// Decode
+	dsrc := make(chan int)
+	go func() {
+		for i := range encoded {
+			dsrc <- encoded[i]
+		}
+		close(dsrc)
+	}()
+
+	decoded := []int{}
+	ddst := make(chan int)
+	wg = sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for b := range ddst {
+			decoded = append(decoded, b)
+		}
+	}()
+
+	if err := witten.Decode(ddst, dsrc, NewCTW(make([]int, 48)), int64(len(x))); err != nil {
+		t.Fatalf("%v", err)
+	}
+	wg.Wait()
+
+	// Check that the decoded result is correct.
+	if len(x) != len(decoded) {
+		t.Fatalf("%d != %d", len(x), len(decoded))
+	}
+	for i, b := range x {
+		if decoded[i] != b {
+			t.Errorf("%d: %d != %d", i, b, decoded[i])
+		}
 	}
 }

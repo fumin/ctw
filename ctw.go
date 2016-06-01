@@ -89,8 +89,16 @@ func SeqProb(root *Node, bits []int, bit int, update bool) float64 {
 		ss := traversed[i]
 		node := ss.Node
 
-		if node.left != nil && node.right != nil {
-			node.LogProb = math.Log(0.5) + logaddexp(node.lktp, node.left.LogProb+node.right.LogProb)
+		if node.left != nil || node.right != nil {
+			var lp float64 = 0
+			if node.left != nil {
+				lp = node.left.LogProb
+			}
+			var rp float64 = 0
+			if node.right != nil {
+				rp = node.right.LogProb
+			}
+			node.LogProb = math.Log(0.5) + logaddexp(node.lktp, lp+rp)
 		} else {
 			node.LogProb = node.lktp
 		}
@@ -155,10 +163,9 @@ func NewCTW(bits []int) *CTW {
 
 // Prob0 returns the probability that the next bit be zero.
 func (model *CTW) Prob0() float64 {
-	joint0 := SeqProb(model.root, model.bits, 0, false)
-	joint1 := SeqProb(model.root, model.bits, 1, false)
-	cond := 1.0 / (1 + math.Exp(joint1-joint0))
-	return cond
+	before := model.root.LogProb
+	after := SeqProb(model.root, model.bits, 0, false)
+	return math.Exp(after - before)
 }
 
 // Observe updates the context tree, given that the sequence is followed by bit.

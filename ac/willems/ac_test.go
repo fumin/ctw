@@ -1,4 +1,4 @@
-package ctw
+package willems
 
 import (
 	"io/ioutil"
@@ -26,13 +26,6 @@ func TestEncodeConstModel(t *testing.T) {
 
 	// Test that the "creating zeros in delay register" mechanism is working
 	testEncode(t, model(0.000000025))
-}
-
-func TestEncodeCTW(t *testing.T) {
-	model := func() Model {
-		return NewCTW(make([]int, 48))
-	}
-	testEncode(t, model)
 }
 
 func testEncode(t *testing.T, model func() Model) {
@@ -104,40 +97,6 @@ func testEncode(t *testing.T, model func() Model) {
 		if decoded[i] != b {
 			t.Errorf("%d: %d != %d", i, b, decoded[i])
 		}
-	}
-}
-
-func TestExpTables(t *testing.T) {
-	A, B := expTables()
-
-	if A[1] != (1<<f)-1 {
-		t.Errorf("%d", A[1])
-	}
-	if A[1<<f] != 1<<(f-1) {
-		t.Errorf("%d", A[1<<f])
-	}
-
-	// B entries for (1<<(f-1)), (1<<f)-1
-	if B[(1<<(f-1))] != (1 << f) {
-		t.Errorf("%d", B[(1<<(f-1))])
-	}
-	if B[(1<<f)-1] != 1 {
-		t.Errorf("%d", B[(1<<f)-1])
-	}
-	if B[(1<<f)-2] != 3 {
-		t.Errorf("%d", B[(1<<f)-2])
-	}
-
-	// B entries for 1,(1<<(f-1))-1
-	if B[1] != uint64((1<<f)+(f-1)*(1<<f)) {
-		t.Errorf("%d", B[1])
-	}
-	if B[2] != uint64((1<<f)+(f-2)*(1<<f)) {
-		t.Errorf("%d", B[2])
-	}
-	j := (1 << (f - 1)) - 1
-	if B[j] != uint64(3+(1<<f)) {
-		t.Errorf("%d", B[j])
 	}
 }
 

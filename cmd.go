@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+
+	"github.com/fumin/ctw/ac/witten"
 )
 
 // Compress compresses the named file using arithmetic coding supplied with a Context Tree Weighting probabilistic model of depth depth.
@@ -90,7 +92,7 @@ func Compress(w io.Writer, name string, depth int) error {
 	}()
 
 	model := NewCTW(make([]int, depth))
-	Encode(dst, src, model)
+	witten.Encode(dst, src, model)
 
 	if err := <-errc; err != nil {
 		return err
@@ -174,7 +176,7 @@ func Decompress(w io.Writer, r io.Reader, depth int) error {
 	}()
 
 	model := NewCTW(make([]int, depth))
-	decodeErr := Decode(dst, src, model, numBytes*8)
+	decodeErr := witten.Decode(dst, src, model, numBytes*8)
 
 	if err := <-srcErrc; err != nil {
 		return err
