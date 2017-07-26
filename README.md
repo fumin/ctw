@@ -31,4 +31,4 @@ Therefore, this project should only be used for academic, and never for commerci
 
 ## Questions
 * Why does increasing the depth above 48 not improve the compression of gettysburg.txt? Depth 48 gives 772 bytes, while depth 60 also gives 772 bytes.
-* The exposition in https://cs.anu.edu.au/courses/comp4620/2013/slides-ctw.pdf gives a CTW based way of predicting the next bit. However, it is not clear how should we predict the next say 10 bits, without iterating through the 1024 different possibilities.
+* The exposition in https://cs.anu.edu.au/courses/comp4620/2015/slides-ctw.pdf gives a CTW based way of predicting the next bit. However, it is not clear how should we predict the next say 10 bits, without iterating through the 1024 different possibilities.
