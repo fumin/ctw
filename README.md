@@ -15,6 +15,7 @@ diff gettysburg.txt gettys.dctw
 The results are noticeably superior to that of other commercial applications on a Mac OS X:
   * Original: 1463
   * tar.gz: 993
+  * 7z: 908
   * zip: 874
   * CTW: 772
 
