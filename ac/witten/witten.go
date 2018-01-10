@@ -3,7 +3,7 @@
 package witten
 
 import (
-	"fmt"
+	"github.com/fumin/ctw/ac"
 )
 
 const (
@@ -42,20 +42,11 @@ func bitPlusFollow(dst chan<- int, ae *arithmeticEncoder, bit int) {
 	}
 }
 
-// A Model is a probabilistic model on a sequence of binary data.
-type Model interface {
-	// Prob0 returns the probability that the next bit will be zero.
-	Prob0() float64
-
-	// Observe informs the Model that a bit is observed from the sequence.
-	Observe(bit int)
-}
-
 // Encode performs arithmetic coding on a stream of bits given a binary probabilistic model.
 // The input bits should be sent through src, which Encode consumes until it is closed.
 // The output bits can be received from dst. Encode will block when dst if full and is not read from.
 // Encode closes dst when the encoding is complete and there are no more bits to be sent to it.
-func Encode(dst chan<- int, src <-chan int, model Model) {
+func Encode(dst chan<- int, src <-chan int, model ac.Model) {
 	defer close(dst)
 	ae := newAE()
 	for bit := range src {
@@ -113,10 +104,7 @@ func newAD() *arithmeticDecoder {
 	return ad
 }
 
-// ErrDecodeInsufficientBits is returned when there are insufficient bits sent to Decode to reconstruct the original data.
-var ErrDecodeInsufficientBits = fmt.Errorf("insufficient bits sent to decoder")
-
-func Decode(dst chan<- int, src <-chan int, model Model, originalSize int64) error {
+func Decode(dst chan<- int, src <-chan int, model ac.Model, originalSize int64) error {
 	defer close(dst)
 
 	garbageBits := 0
@@ -127,7 +115,7 @@ func Decode(dst chan<- int, src <-chan int, model Model, originalSize int64) err
 		}
 		garbageBits++
 		if garbageBits > codeValueBits-2 {
-			return 0, ErrDecodeInsufficientBits
+			return 0, ac.ErrDecodeInsufficientBits
 		}
 		return 1, nil // the returned bit can actually be random
 	}

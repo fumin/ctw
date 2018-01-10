@@ -1,14 +1,16 @@
-package witten
+package willems
 
 import (
 	"io/ioutil"
 	"sync"
 	"testing"
+
+	"github.com/fumin/ctw/ac"
 )
 
 func TestEncodeConstModel(t *testing.T) {
-	model := func(p float64) func() Model {
-		return func() Model {
+	model := func(p float64) func() ac.Model {
+		return func() ac.Model {
 			return &ConstModel{P0: p}
 		}
 	}
@@ -28,7 +30,7 @@ func TestEncodeConstModel(t *testing.T) {
 	testEncode(t, model(0.000000025))
 }
 
-func testEncode(t *testing.T, model func() Model) {
+func testEncode(t *testing.T, model func() ac.Model) {
 	// Prepare data
 	// x := []int{1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}
 	contents, err := ioutil.ReadFile("gettysburg.txt")
@@ -86,9 +88,7 @@ func testEncode(t *testing.T, model func() Model) {
 		}
 	}()
 
-	if err := Decode(ddst, dsrc, model(), int64(len(x))); err != nil {
-		t.Fatalf("%+v", err)
-	}
+	Decode(ddst, dsrc, model(), int64(len(x)))
 	wg.Wait()
 
 	// Check that the decoded result is correct.

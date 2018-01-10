@@ -1,8 +1,13 @@
+// Package willems implements the arithmetic coding algorithm described in
+// Chapter 6. Arithmetic Encoding and Decoding,
+// F.M.J. Willems and Tj. J. Tjalkens,
+// Complexity Reduction of the Context-Tree Weighting Algorithm: A Study for KPN Research, Technical University of Eindhoven, EIDMA Report RS.97.01.
 package willems
 
 import (
-	"fmt"
 	"math"
+
+	"github.com/fumin/ctw/ac"
 )
 
 const (
@@ -11,27 +16,18 @@ const (
 	//
 	// We need to be aware that it cannot be too big, for a larger f implies a higher floating point precision requirement when calculating the exp-tables A and B.
 	// In particular, a useful check is that A[1] should give ((1 << f) - 1), not (1 << f).
-	f uint = 20
+	f uint = 12
 
 	// d is the width of the delay register in bits.
 	// Here, since we are using an uint64 for the delay register, d is set to 64.
 	d uint = 64
 )
 
-// A Model is a probabilistic model on a sequence of binary data.
-type Model interface {
-	// Prob0 returns the probability that the next bit will be zero.
-	Prob0() float64
-
-	// Observe informs the Model that a bit is observed from the sequence.
-	Observe(bit int)
-}
-
 // Encode performs arithmetic coding on a stream of bits given a binary probabilistic model.
 // The input bits should be sent through src, which Encode consumes until it is closed.
 // The output bits can be received from dst. Encode will block when dst if full and is not read from.
 // Encode closes dst when the encoding is complete and there are no more bits to be sent to it.
-func Encode(dst chan<- int, src <-chan int, model Model) {
+func Encode(dst chan<- int, src <-chan int, model ac.Model) {
 	defer close(dst)
 	var dlreg uint64 = 0
 	var accum uint64 = 0
@@ -55,6 +51,8 @@ func Encode(dst chan<- int, src <-chan int, model Model) {
 				xt = 1
 			}
 		}
+		// The initial step size for a predicted probability, v_0, is given in
+		// Equation (118), Section 4 Exponential Tables and Stepsizes, Chapter 6.
 		v_0 := uint64(math.Exp2(float64(f))*math.Log2(1/p) + 0.5)
 		if v_0 < 3 {
 			v_0 = 3
@@ -80,7 +78,7 @@ func Encode(dst chan<- int, src <-chan int, model Model) {
 			v = v - (1 << f)
 		}
 
-		// Creating zeors in delay register
+		// Creating zeros in delay register
 		for dlreg == ((1 << d) - 1) {
 			dst <- 1
 			dlreg = 2 * (dlreg - (1 << (d - 1)))
@@ -136,9 +134,6 @@ func Encode(dst chan<- int, src <-chan int, model Model) {
 	}
 }
 
-// ErrDecodeInsufficientBits is returned when there are insufficient bits sent to Decode to reconstruct the original data.
-var ErrDecodeInsufficientBits = fmt.Errorf("insufficient bits sent to decoder")
-
 // Decode decodes a stream of bits encoded by Encode using arithmetic coding.
 //
 // Completion of the decoding is determined by originalSize, which is the number of bits of the original data before encoding.
@@ -151,7 +146,7 @@ var ErrDecodeInsufficientBits = fmt.Errorf("insufficient bits sent to decoder")
 // Decode closes dst when the decoding is complete.
 // Decode expects that model is the exact same probabilistic model used in Encode.
 // ErrDecodeInsufficientBits is returned if src is closed before originalSize number of bits have been decoded.
-func Decode(dst chan<- int, src <-chan int, model Model, originalSize int64) error {
+func Decode(dst chan<- int, src <-chan int, model ac.Model, originalSize int64) error {
 	defer close(dst)
 	var dlreg uint64 = 0
 	var accum uint64 = 0
@@ -161,14 +156,14 @@ func Decode(dst chan<- int, src <-chan int, model Model, originalSize int64) err
 	for i := 1; i <= int(d); i++ {
 		pull, ok := <-src
 		if !ok {
-			return ErrDecodeInsufficientBits
+			return ac.ErrDecodeInsufficientBits
 		}
 		cdlreg = cdlreg*2 + uint64(pull)
 	}
 	for i := 1; i <= int(f+1); i++ {
 		pull, ok := <-src
 		if !ok {
-			return ErrDecodeInsufficientBits
+			return ac.ErrDecodeInsufficientBits
 		}
 		caccum = caccum*2 + uint64(pull)
 	}
@@ -210,7 +205,7 @@ func Decode(dst chan<- int, src <-chan int, model Model, originalSize int64) err
 
 			pl, ok := <-src
 			if !ok {
-				return ErrDecodeInsufficientBits
+				return ac.ErrDecodeInsufficientBits
 			}
 			if caccum >= (1 << f) {
 				cdlreg = cdlreg + 1
@@ -237,7 +232,7 @@ func Decode(dst chan<- int, src <-chan int, model Model, originalSize int64) err
 
 			pl, ok := <-src
 			if !ok {
-				return ErrDecodeInsufficientBits
+				return ac.ErrDecodeInsufficientBits
 			}
 			if caccum >= (1 << f) {
 				cdlreg = cdlreg + 1

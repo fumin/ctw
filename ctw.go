@@ -29,34 +29,34 @@ func logaddexp(x, y float64) float64 {
 	}
 }
 
-// Node represents a suffix in a Context Tree Weighting.
+// treeNode represents a suffix in a Context Tree Weighting.
 // It holds the log probability of the source sequence given the suffix represented by the node.
-type Node struct {
+type treeNode struct {
 	LogProb float64 // log probability of suffix
 
 	a    uint32  // number of zeros with suffix
 	b    uint32  // number of ones with suffix
 	lktp float64 // log probability of the Krichevsky-Trofimov (KT) Estimation, given our current number of zeros and ones.
 
-	left  *Node // the sub-suffix that ends with one
-	right *Node // the sub-suffix that ends with zero
+	left  *treeNode // the sub-suffix that ends with one
+	right *treeNode // the sub-suffix that ends with zero
 }
 
-// SeqProb returns the probability of a sequence if it is followed by a bit.
-// Argument root is the root of the context tree.
-// Argument bits is the last few bits of the sequence, len(bits) should be the depth of the tree.
-// Argument bit is the new bit following the sequence.
-// Argument update determines whether the tree is updated after the calculation.
+// seqProb returns the probability of a sequence if it is followed by a bit.
+// Root is the root of the context tree.
+// Bits is the last few bits of the sequence, len(bits) should be the depth of the tree.
+// Bit is the new bit following the sequence.
+// Update determines whether the tree is updated after the calculation.
 // If update is false, the changes required by the calculation are rollbacked, and the tree remains unchanged.
-func SeqProb(root *Node, bits []int, bit int, update bool) float64 {
+func seqProb(root *treeNode, bits []int, bit int, update bool) float64 {
 	if bit != 0 && bit != 1 {
 		log.Fatalf("wrong bit %d", bit)
 	}
 
 	// Update the counts of zeros and ones of each node.
 	type Snapshot struct {
-		Node  *Node
-		State Node
+		Node  *treeNode
+		State treeNode
 		IsNew bool
 	}
 	traversed := []Snapshot{}
@@ -68,13 +68,13 @@ func SeqProb(root *Node, bits []int, bit int, update bool) float64 {
 		isNew := false
 		if bits[len(bits)-1-d] == 0 {
 			if node.right == nil {
-				node.right = &Node{}
+				node.right = &treeNode{}
 				isNew = true
 			}
 			node = node.right
 		} else {
 			if node.left == nil {
-				node.left = &Node{}
+				node.left = &treeNode{}
 				isNew = true
 			}
 			node = node.left
@@ -132,7 +132,7 @@ func SeqProb(root *Node, bits []int, bit int, update bool) float64 {
 }
 
 // krichevskyTrofimov updates the Krichevsky-Trofimov estimate of a node given a new observed bit.
-func krichevskyTrofimov(node *Node, bit int) {
+func krichevskyTrofimov(node *treeNode, bit int) {
 	a := float64(node.a)
 	b := float64(node.b)
 	if bit == 0 {
@@ -145,10 +145,10 @@ func krichevskyTrofimov(node *Node, bit int) {
 }
 
 // A CTW is a Context Tree Weighting based probabilistic model for binary data.
-// CTW implements the Model interface.
+// CTW implements the arithmetic coding Model interface.
 type CTW struct {
 	bits []int
-	root *Node
+	root *treeNode
 }
 
 // NewCTW returns a new CTW whose context tree's depth is len(bits).
@@ -156,7 +156,7 @@ type CTW struct {
 func NewCTW(bits []int) *CTW {
 	model := &CTW{
 		bits: bits,
-		root: &Node{},
+		root: &treeNode{},
 	}
 	return model
 }
@@ -164,13 +164,13 @@ func NewCTW(bits []int) *CTW {
 // Prob0 returns the probability that the next bit be zero.
 func (model *CTW) Prob0() float64 {
 	before := model.root.LogProb
-	after := SeqProb(model.root, model.bits, 0, false)
+	after := seqProb(model.root, model.bits, 0, false)
 	return math.Exp(after - before)
 }
 
 // Observe updates the context tree, given that the sequence is followed by bit.
 func (model *CTW) Observe(bit int) {
-	SeqProb(model.root, model.bits, bit, true)
+	seqProb(model.root, model.bits, bit, true)
 	for i := 1; i < len(model.bits); i++ {
 		model.bits[i-1] = model.bits[i]
 	}
