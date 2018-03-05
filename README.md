@@ -23,10 +23,6 @@ Reference: F.M.J. Willems and Tj. J. Tjalkens, Complexity Reduction of the Conte
 
 Full documentation at https://godoc.org/github.com/fumin/ctw.
 
-## License
-Please note that both the Context Tree Weighting and Arithmetic Coding algorithms are PATENTED.
-Therefore, this project should only be used for academic, and never for commercial purposes.
-
 ## Testing
 `go test`
 
