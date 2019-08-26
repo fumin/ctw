@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"flag"
 	"io"
 	"io/ioutil"
@@ -91,20 +93,16 @@ func display(data []string, distMat []float64) error {
 }
 
 func distance(cacher map[string]float64, intelligence, x, y string) (float64, error) {
-	xyFname := filepath.Join("/tmp", filepath.Base(x)+filepath.Base(y))
-	xy, err := os.Create(xyFname)
+	xy, err := concat(x, y)
 	if err != nil {
 		return -1, errors.Wrap(err, "")
 	}
 	defer os.Remove(xy.Name())
-	if err := concatFiles(xy, x, y); err != nil {
-		return -1, errors.Wrap(err, "")
-	}
-
 	kxy, err := complexity(cacher, intelligence, xy.Name())
 	if err != nil {
 		return -1, errors.Wrap(err, "")
 	}
+
 	kx, err := complexity(cacher, intelligence, x)
 	if err != nil {
 		return -1, errors.Wrap(err, "")
@@ -162,6 +160,28 @@ func complexityTarGz(fpath string) (float64, error) {
 		return -1, errors.Wrap(err, "")
 	}
 	return float64(info.Size()), nil
+}
+
+func concat(x, y string) (*os.File, error) {
+	// Random string for file name.
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return nil, errors.Wrap(err, "")
+	}
+	randStr := base64.RawURLEncoding.EncodeToString([]byte(b))
+
+	// Create file.
+	xyFname := filepath.Join("/tmp", filepath.Base(x)+filepath.Base(y)+randStr)
+	xy, err := os.Create(xyFname)
+	if err != nil {
+		return nil, errors.Wrap(err, "")
+	}
+
+	// Write to concatenated file.
+	if err := concatFiles(xy, x, y); err != nil {
+		return nil, errors.Wrap(err, "")
+	}
+	return xy, nil
 }
 
 func concatFiles(tmpf *os.File, fs ...string) error {

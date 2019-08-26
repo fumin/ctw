@@ -23,6 +23,9 @@ Reference: F.M.J. Willems and Tj. J. Tjalkens, Complexity Reduction of the Conte
 
 Full documentation at https://godoc.org/github.com/fumin/ctw.
 
+## Applications
+A demonstration of using this compression tool to study mammalian evolution and construct the phylogeny of the SARS virus can be found [here](https://docs.google.com/presentation/d/1LUbo-6mLpYTwcELOLlRR4ohku9j2kCiQj_2sYPh0uWA/edit?usp=sharing).
+
 ## Testing
 `go test`
 

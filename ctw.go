@@ -98,7 +98,8 @@ func seqProb(root *treeNode, bits []int, bit int, update bool) float64 {
 			if node.right != nil {
 				rp = node.right.LogProb
 			}
-			node.LogProb = math.Log(0.5) + logaddexp(node.lktp, lp+rp)
+			w := 0.5
+			node.LogProb = logaddexp(math.Log(w)+node.lktp, math.Log(1-w)+lp+rp)
 		} else {
 			node.LogProb = node.lktp
 		}
