@@ -17,6 +17,7 @@ The results are noticeably superior to that of other commercial applications on 
   * tar.gz: 993
   * 7z: 908
   * zip: 874
+  * xz: 828
   * CTW: 772
 
 Reference: F.M.J. Willems and Tj. J. Tjalkens, Complexity Reduction of the Context-Tree Weighting Algorithm: A Study for KPN Research, Technical University of Eindhoven, EIDMA Report RS.97.01.
