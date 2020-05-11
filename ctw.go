@@ -42,6 +42,23 @@ type treeNode struct {
 	right *treeNode // the sub-suffix that ends with zero
 }
 
+func (node *treeNode) clone() *treeNode {
+	clone := &treeNode{}
+	clone.LogProb = node.LogProb
+	clone.a = node.a
+	clone.b = node.b
+	clone.lktp = node.lktp
+
+	if node.left != nil {
+		clone.left = node.left.clone()
+	}
+	if node.right != nil {
+		clone.right = node.right.clone()
+	}
+
+	return clone
+}
+
 // seqProb returns the probability of a sequence if it is followed by a bit.
 // Root is the root of the context tree.
 // Bits is the last few bits of the sequence, len(bits) should be the depth of the tree.
@@ -176,4 +193,16 @@ func (model *CTW) Observe(bit int) {
 		model.bits[i-1] = model.bits[i]
 	}
 	model.bits[len(model.bits)-1] = bit
+}
+
+func (model *CTW) Copy() *CTW {
+	clone := &CTW{}
+
+	for _, b := range model.bits {
+		clone.bits = append(clone.bits, b)
+	}
+
+	clone.root = model.root.clone()
+
+	return clone
 }
