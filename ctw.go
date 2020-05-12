@@ -42,26 +42,52 @@ type treeNode struct {
 	right *treeNode // the sub-suffix that ends with zero
 }
 
-// seqProb returns the probability of a sequence if it is followed by a bit.
+type snapshot struct {
+	node  *treeNode
+	state treeNode
+	isNew bool
+}
+
+func revert(traversed []snapshot) {
+	for _, ss := range traversed {
+		node := ss.node
+		node.lktp = ss.state.lktp
+		node.a = ss.state.a
+		node.b = ss.state.b
+		node.LogProb = ss.state.LogProb
+
+		// The memory releasing logic below saves memory.
+		// However, it might increase GC times if the released memory is added back again.
+		// This happens when our predictions are faily consistent with the eventually arriving data.
+		// Here we emphasize performance by not doing this memory saving optimization.
+		//
+		// if i < len(traversed)-2 {
+		// 	next := traversed[i+1]
+		// 	if next.IsNew {
+		// 		if next.Node == node.right {
+		// 			node.right = nil
+		// 		} else {
+		// 			node.left = nil
+		// 		}
+		// 		break
+		// 	}
+		// }
+	}
+}
+
+// update updates the tree according to the rules of CTW.
 // Root is the root of the context tree.
 // Bits is the last few bits of the sequence, len(bits) should be the depth of the tree.
 // Bit is the new bit following the sequence.
-// Update determines whether the tree is updated after the calculation.
-// If update is false, the changes required by the calculation are rollbacked, and the tree remains unchanged.
-func seqProb(root *treeNode, bits []int, bit int, update bool) float64 {
+func update(root *treeNode, bits []int, bit int) []snapshot {
 	if bit != 0 && bit != 1 {
 		log.Fatalf("wrong bit %d", bit)
 	}
 
 	// Update the counts of zeros and ones of each node.
-	type Snapshot struct {
-		Node  *treeNode
-		State treeNode
-		IsNew bool
-	}
-	traversed := []Snapshot{}
+	traversed := []snapshot{}
 	node := root
-	traversed = append(traversed, Snapshot{Node: node, State: *node, IsNew: false})
+	traversed = append(traversed, snapshot{node: node, state: *node, isNew: false})
 	krichevskyTrofimov(node, bit)
 
 	for d := 0; d < len(bits); d++ {
@@ -80,14 +106,14 @@ func seqProb(root *treeNode, bits []int, bit int, update bool) float64 {
 			node = node.left
 		}
 
-		traversed = append(traversed, Snapshot{Node: node, State: *node, IsNew: isNew})
+		traversed = append(traversed, snapshot{node: node, state: *node, isNew: isNew})
 		krichevskyTrofimov(node, bit)
 	}
 
 	// Update the actual node probabilities.
 	for i := len(traversed) - 1; i >= 0; i-- {
 		ss := traversed[i]
-		node := ss.Node
+		node := ss.node
 
 		if node.left != nil || node.right != nil {
 			var lp float64 = 0
@@ -104,32 +130,8 @@ func seqProb(root *treeNode, bits []int, bit int, update bool) float64 {
 			node.LogProb = node.lktp
 		}
 	}
-	seqProb := root.LogProb
 
-	// Rollback changes to the tree if necessary.
-	if !update {
-		for i, ss := range traversed {
-			node := ss.Node
-			node.lktp = ss.State.lktp
-			node.a = ss.State.a
-			node.b = ss.State.b
-			node.LogProb = ss.State.LogProb
-
-			if i < len(traversed)-2 {
-				next := traversed[i+1]
-				if next.IsNew {
-					if next.Node == node.right {
-						node.right = nil
-					} else {
-						node.left = nil
-					}
-					break
-				}
-			}
-		}
-	}
-
-	return seqProb
+	return traversed
 }
 
 // krichevskyTrofimov updates the Krichevsky-Trofimov estimate of a node given a new observed bit.
@@ -165,15 +167,62 @@ func NewCTW(bits []int) *CTW {
 // Prob0 returns the probability that the next bit be zero.
 func (model *CTW) Prob0() float64 {
 	before := model.root.LogProb
-	after := seqProb(model.root, model.bits, 0, false)
+	traversal := update(model.root, model.bits, 0)
+	after := model.root.LogProb
+
+	revert(traversal)
+
 	return math.Exp(after - before)
 }
 
 // Observe updates the context tree, given that the sequence is followed by bit.
 func (model *CTW) Observe(bit int) {
-	seqProb(model.root, model.bits, bit, true)
+	model.observe(bit)
+}
+
+func (model *CTW) observe(bit int) []snapshot {
+	traversal := update(model.root, model.bits, bit)
 	for i := 1; i < len(model.bits); i++ {
 		model.bits[i-1] = model.bits[i]
 	}
 	model.bits[len(model.bits)-1] = bit
+	return traversal
+}
+
+// A CTWReverter is a CTW model that allows reverting to its previous state.
+// This is useful for predicting several steps ahead, while keeping the model's original state intact.
+type CTWReverter struct {
+	model      *CTW
+	bits       []int
+	traversals [][]snapshot
+}
+
+func NewCTWReverter(model *CTW) *CTWReverter {
+	cr := &CTWReverter{}
+	cr.model = model
+	return cr
+}
+
+func (cr *CTWReverter) Prob0() float64 {
+	return cr.model.Prob0()
+}
+
+func (cr *CTWReverter) Observe(bit int) {
+	cr.bits = append(cr.bits, cr.model.bits[0])
+	cr.traversals = append(cr.traversals, cr.model.observe(bit))
+}
+
+func (cr *CTWReverter) Unobserve() {
+	// Revert the tree.
+	tvIdx := len(cr.traversals) - 1
+	revert(cr.traversals[tvIdx])
+	cr.traversals = cr.traversals[:tvIdx]
+
+	// Revert the context bits.
+	for i := len(cr.model.bits) - 1; i > 0; i-- {
+		cr.model.bits[i] = cr.model.bits[i-1]
+	}
+	btIdx := len(cr.bits) - 1
+	cr.model.bits[0] = cr.bits[btIdx]
+	cr.bits = cr.bits[:btIdx]
 }

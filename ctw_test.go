@@ -1,8 +1,11 @@
 package ctw
 
 import (
+	"flag"
 	"io/ioutil"
+	"log"
 	"math"
+	"os"
 	"sync"
 	"testing"
 
@@ -12,13 +15,14 @@ import (
 // TestUpdateSunehag tests the examples in the slides by Peter Sunehag and Marcus Hutter
 // http://cs.anu.edu.au/courses/COMP4620/2013/slides-ctw.pdf
 func TestSunehag(t *testing.T) {
+	t.Parallel()
 	root := &treeNode{}
 	depth := 3
 	bits := []int{1, 1, 0}
 
 	source := []int{0, 1, 0, 0, 1, 1, 0}
 	for _, b := range source {
-		seqProb(root, bits[len(bits)-depth:], b, true)
+		update(root, bits[len(bits)-depth:], b)
 		bits = append(bits, b)
 	}
 	if math.Abs(root.LogProb-math.Log(7.0/2048)) > 1e-8 {
@@ -26,9 +30,10 @@ func TestSunehag(t *testing.T) {
 	}
 
 	b := 0
-	seqProb(root, bits[len(bits)-depth:], b, true)
+	update(root, bits[len(bits)-depth:], b)
 	bits = append(bits, b)
 	if math.Abs(root.LogProb-math.Log(153.0/65536)) > 1e-8 {
+		log.Printf("%f", root.LogProb)
 		t.Errorf("%f", root.LogProb)
 	}
 }
@@ -36,13 +41,14 @@ func TestSunehag(t *testing.T) {
 // TestUpdateEIDMA tests the examle in the EIDMA report by F.M.J. Willems and Tj. J. Tjalkens.
 // Complexity Reduction of the Context-Tree Weighting Algorithm: A Study for KPN Research, Technical University of Eindhoven, EIDMA Report RS.97.01
 func TestEIDMA(t *testing.T) {
+	t.Parallel()
 	root := &treeNode{}
 	depth := 3
 	bits := []int{0, 1, 0}
 
 	source := []int{0, 1, 1, 0, 1, 0, 0}
 	for _, b := range source {
-		seqProb(root, bits[len(bits)-depth:], b, true)
+		update(root, bits[len(bits)-depth:], b)
 		bits = append(bits, b)
 	}
 	if math.Abs(root.LogProb-math.Log(95.0/32768)) > 1e-8 {
@@ -50,27 +56,67 @@ func TestEIDMA(t *testing.T) {
 	}
 }
 
-// TestSeqProbNoUpdate tests that seqProb called with update false does not update the context tree,
-// and that the returned value is the same as the root's probability after update.
-func TestSeqProbNoUpdate(t *testing.T) {
+// TestRevert tests that revert reverts the state of the tree to its original one.
+func TestRevert(t *testing.T) {
+	t.Parallel()
 	root := &treeNode{}
 	depth := 3
 	bits := []int{0, 1, 0}
 
 	source := []int{0, 1, 1, 0, 1, 0, 0}
 	for _, b := range source {
-		seqP := seqProb(root, bits[len(bits)-depth:], b, false)
-		seqProb(root, bits[len(bits)-depth:], b, true)
+		traversal := update(root, bits[len(bits)-depth:], b)
+		seqP := root.LogProb
 
-		if seqP != root.LogProb {
-			t.Errorf("%f", seqP)
+		revert(traversal)
+
+		update(root, bits[len(bits)-depth:], b)
+		seqPAfter := root.LogProb
+
+		if seqP != seqPAfter {
+			t.Errorf("%f %f", seqP, seqPAfter)
 		}
 
 		bits = append(bits, b)
 	}
 }
 
+func TestCTWReverter(t *testing.T) {
+	t.Parallel()
+	model := NewCTW(make([]int, 48))
+	x := []int{1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}
+	for _, xi := range x {
+		model.Observe(xi)
+	}
+	prob0 := model.Prob0()
+
+	reverter := NewCTWReverter(model)
+	y := []int{0, 1, 0, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0}
+	for _, yi := range y {
+		reverter.Observe(yi)
+		reverter.Unobserve()
+
+		reverter.Observe(yi)
+		reverter.Observe(yi)
+		reverter.Unobserve()
+	}
+	prob0Updated := model.Prob0()
+	if prob0Updated == prob0 {
+		t.Fatalf("%f %f", prob0Updated, prob0)
+	}
+
+	for _, _ = range y {
+		reverter.Unobserve()
+	}
+
+	prob0Reverted := model.Prob0()
+	if prob0Reverted != prob0 {
+		t.Fatalf("%f %f", prob0Reverted, prob0)
+	}
+}
+
 func TestEncode(t *testing.T) {
+	t.Parallel()
 	// Prepare data
 	// x := []int{1, 1, 0, 1, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0}
 	contents, err := ioutil.ReadFile("gettysburg.txt")
@@ -106,7 +152,7 @@ func TestEncode(t *testing.T) {
 
 	witten.Encode(dst, src, NewCTW(make([]int, 48)))
 	wg.Wait()
-	t.Logf("encoded bits: %d, original bits: %d", len(encoded), len(x))
+	// t.Logf("encoded bits: %d, original bits: %d", len(encoded), len(x))
 
 	// Decode
 	dsrc := make(chan int)
@@ -142,4 +188,10 @@ func TestEncode(t *testing.T) {
 			t.Errorf("%d: %d != %d", i, b, decoded[i])
 		}
 	}
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
+	os.Exit(m.Run())
 }

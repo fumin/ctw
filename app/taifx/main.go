@@ -1,6 +1,6 @@
 package main
 
-import(
+import (
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -16,15 +16,15 @@ import(
 )
 
 var (
-        flagConfig = flag.String("c", `{
+	flagConfig = flag.String("c", `{
 		"Data": "txf_renko_0001.csv",
 		"Depth": 48
 		}`, "configuration")
 )
 
-type Bar struct{
-	Time time.Time
-	Price float64
+type Bar struct {
+	Time      time.Time
+	Price     float64
 	Direction int
 }
 
@@ -58,9 +58,12 @@ func parseData(config Config) ([]Bar, []Bar, error) {
 		}
 		var direction int
 		switch directionStr {
-		case "True": direction = 1
-		case "False": direction = 0
-		default: return nil, nil, errors.Wrap(err, fmt.Sprintf("%+v", r))
+		case "True":
+			direction = 1
+		case "False":
+			direction = 0
+		default:
+			return nil, nil, errors.Wrap(err, fmt.Sprintf("%+v", r))
 		}
 		bar := Bar{}
 		bar.Time = t
@@ -77,8 +80,8 @@ func parseData(config Config) ([]Bar, []Bar, error) {
 	return train, test, nil
 }
 
-type Data struct{
-	Bar []Bar
+type Data struct {
+	Bar    []Bar
 	Cursor int
 }
 
@@ -95,17 +98,17 @@ func (d *Data) Consume() Bar {
 	return bar
 }
 
-type StatItem struct{
-	Time time.Time
-	Price float64
+type StatItem struct {
+	Time       time.Time
+	Price      float64
 	Prediction int
 	ProfitLoss float64
-	Balance float64
+	Balance    float64
 }
 
-type Stat struct{
+type Stat struct {
 	Leverage float64
-	Items []StatItem
+	Items    []StatItem
 }
 
 func NewStat(balance, leverage float64) *Stat {
@@ -185,16 +188,16 @@ func run(config Config) error {
 	for {
 		prob0 := model.Prob0()
 		if testData.Cursor >= len(testData.Bar) {
-                        break
-                }
-                nextBar := testData.Consume()
+			break
+		}
+		nextBar := testData.Consume()
 
 		testStat.Record(curBar, prob0, nextBar)
 		if testStat.Bankrupt() {
 			break
 		}
 
-                model.Observe(nextBar.Direction)
+		model.Observe(nextBar.Direction)
 		curBar = nextBar
 	}
 
@@ -206,8 +209,8 @@ func run(config Config) error {
 	return nil
 }
 
-type Config struct{
-	Data string
+type Config struct {
+	Data  string
 	Depth int
 }
 
@@ -226,7 +229,7 @@ func parseConfig() (Config, error) {
 
 func main() {
 	flag.Parse()
-        log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds | log.Lshortfile)
 
 	config, err := parseConfig()
 	if err != nil {
