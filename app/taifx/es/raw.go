@@ -20,7 +20,7 @@ import (
 var (
 	flagConfig = flag.String("c", `{
                 "Data": "/Users/mac/Desktop/es_1m.csv",
-		"Threashold": 0.001,
+		"Threashold": 0.002,
                 "TransactionCost": 0.05,
                 "Depth": 48,
 		"Leverage": 1,
@@ -29,15 +29,12 @@ var (
 )
 
 type Data struct {
-	Threashold float64
-	f          *os.File
-	r          *csv.Reader
-	curCandle  Candle
+	f *os.File
+	r *csv.Reader
 }
 
 func NewData(config Config) (*Data, error) {
 	data := &Data{}
-	data.Threashold = config.Threashold
 
 	var err error
 	data.f, err = os.Open(config.Data)
@@ -53,11 +50,6 @@ func NewData(config Config) (*Data, error) {
 		return nil, errors.Wrap(err, "")
 	}
 
-	data.curCandle, err = data.read()
-	if err != nil {
-		return nil, errors.Wrap(err, "")
-	}
-
 	return data, nil
 }
 
@@ -66,29 +58,6 @@ func (data *Data) Close() error {
 		return errors.Wrap(err, "")
 	}
 	return nil
-}
-
-type Renko struct {
-	Time      time.Time
-	Price     float64
-	Direction int
-}
-
-func (data *Data) Renko() (Renko, error) {
-	for {
-		cnd, err := data.read()
-		if err != nil {
-			return Renko{}, errors.Wrap(err, "")
-		}
-		if cnd.Close/data.curCandle.Close > 1+data.Threashold {
-			data.curCandle = cnd
-			return Renko{Time: cnd.Time, Price: cnd.Close, Direction: 1}, nil
-		}
-		if cnd.Close/data.curCandle.Close < 1-data.Threashold {
-			data.curCandle = cnd
-			return Renko{Time: cnd.Time, Price: cnd.Close, Direction: 0}, nil
-		}
-	}
 }
 
 type Candle struct {
@@ -100,7 +69,7 @@ type Candle struct {
 	Volume int64
 }
 
-func (data *Data) read() (Candle, error) {
+func (data *Data) Read() (Candle, error) {
 	rec, err := data.r.Read()
 	if err != nil {
 		return Candle{}, errors.Wrap(err, "")
@@ -139,6 +108,75 @@ func (data *Data) read() (Candle, error) {
 	return c, nil
 }
 
+type Renko struct {
+	Time      time.Time
+	Price     float64
+	Direction int
+}
+
+type Agent interface {
+	SetModel(*ctw.CTW)
+	Observe(Renko)
+	Act(float64, float64, int) int
+}
+
+type RenkoWrapper struct {
+	Threashold float64
+	Depth      int
+	curCandle  *Candle
+	context    []int
+	Agent      Agent
+}
+
+func NewRenkoWrapper(config Config) *RenkoWrapper {
+	wrapper := &RenkoWrapper{}
+	wrapper.Threashold = config.Threashold
+	wrapper.Depth = config.Depth
+	return wrapper
+}
+
+func (wrapper *RenkoWrapper) Observe(candle Candle) *Renko {
+	if wrapper.curCandle == nil {
+		wrapper.curCandle = &candle
+		return nil
+	}
+
+	direction := -1
+	if candle.Close/wrapper.curCandle.Close > 1+wrapper.Threashold {
+		wrapper.curCandle = &candle
+		direction = 1
+	}
+	if candle.Close/wrapper.curCandle.Close < 1-wrapper.Threashold {
+		wrapper.curCandle = &candle
+		direction = 0
+	}
+	if direction == -1 {
+		return nil
+	}
+
+	if len(wrapper.context) < wrapper.Depth {
+		wrapper.context = append(wrapper.context, direction)
+		if len(wrapper.context) < wrapper.Depth {
+			return nil
+		}
+		model := ctw.NewCTW(wrapper.context)
+		wrapper.Agent.SetModel(model)
+		return nil
+	}
+
+	renko := Renko{Time: candle.Time, Price: candle.Close, Direction: direction}
+	wrapper.Agent.Observe(renko)
+	return &renko
+}
+
+func (wrapper *RenkoWrapper) Act(candle Candle, balance float64, position int) (int, *Renko) {
+	renko := wrapper.Observe(candle)
+	if renko == nil {
+		return position, nil
+	}
+	return wrapper.Agent.Act(renko.Price, balance, position), renko
+}
+
 type Entry struct {
 	Time            time.Time
 	Price           float64
@@ -151,49 +189,46 @@ type Entry struct {
 type Tester struct {
 	TransactionCost float64
 	History         []Entry
+	MaxHistory      int
 
 	Trials   float64
 	Corrects float64
 }
 
-func NewTester(config Config, prevRenko Renko) *Tester {
+func NewTester(config Config, prevCandle Candle) *Tester {
 	tester := &Tester{}
 	tester.TransactionCost = config.TransactionCost
+	tester.MaxHistory = 128
 
 	entry := Entry{}
-	entry.Time = prevRenko.Time
-	entry.Price = prevRenko.Price
+	entry.Time = prevCandle.Time
+	entry.Price = prevCandle.Close
 	entry.Balance = config.Balance
 	tester.History = append(tester.History, entry)
 
 	return tester
 }
 
-func (tester *Tester) Record(position int, rk Renko) {
+func (tester *Tester) Record(position int, candle Candle) {
 	prev := tester.History[len(tester.History)-1]
 
 	posChg := math.Abs(float64(position - prev.Position))
 	tcost := posChg * tester.TransactionCost
 
-	profitLoss := (rk.Price - prev.Price) * float64(prev.Position)
+	profitLoss := (candle.Close - prev.Price) * float64(prev.Position)
 
 	entry := Entry{}
-	entry.Time = rk.Time
-	entry.Price = rk.Price
+	entry.Time = candle.Time
+	entry.Price = candle.Close
 	entry.Position = position
 	entry.TransactionCost = tcost
 	entry.ProfitLoss = profitLoss
 	entry.Balance = prev.Balance - tcost + profitLoss
 	tester.History = append(tester.History, entry)
 
-	if prev.Position != 0 {
-		tester.Trials += 1
-		if profitLoss > 0 {
-			tester.Corrects += 1
-		}
+	if len(tester.History) > tester.MaxHistory {
+		tester.trim()
 	}
-
-	tester.PrintCSV()
 }
 
 func (tester *Tester) PrintCSV() {
@@ -202,16 +237,13 @@ func (tester *Tester) PrintCSV() {
 	fmt.Printf("%s,%.2f,%d,%.2f,%.2f,%.2f\n", tStr, h.Price, h.Position, h.TransactionCost, h.ProfitLoss, h.Balance)
 }
 
-func (tester *Tester) Contracts() int {
-	contracts := 0
-	for i, h := range tester.History[1:] {
-		posChg := h.Position - tester.History[i].Position
-		if posChg < 0 {
-			posChg = -posChg
-		}
-		contracts += posChg
+func (tester *Tester) trim() {
+	start := len(tester.History) / 2
+	for i := start; i < len(tester.History); i++ {
+		tester.History[i-start] = tester.History[i]
 	}
-	return contracts
+	numLeft := len(tester.History) - start
+	tester.History = tester.History[:numLeft]
 }
 
 type NextStep struct {
@@ -219,9 +251,16 @@ type NextStep struct {
 	Model    *ctw.CTW
 }
 
+func (agent *NextStep) SetModel(model *ctw.CTW) {
+	agent.Model = model
+}
+
+func (agent *NextStep) Observe(rk Renko) {
+	agent.Model.Observe(rk.Direction)
+}
+
 func (agent *NextStep) Act(price, balance float64, prevPos int) int {
 	pos := int(balance / price * agent.Leverage)
-
 	prob0 := agent.Model.Prob0()
 	if prob0 > 0.5 {
 		pos = -pos
@@ -236,9 +275,19 @@ type RolloutAgent struct {
 	Leverage        float64
 	Depth           int
 	NumSimulations  int
+	model           *ctw.CTW
 	reverter        *ctw.CTWReverter
 
 	tick int
+}
+
+func (agent *RolloutAgent) SetModel(model *ctw.CTW) {
+	agent.model = model
+	agent.reverter = ctw.NewCTWReverter(model)
+}
+
+func (agent *RolloutAgent) Observe(rk Renko) {
+	agent.model.Observe(rk.Direction)
 }
 
 func (agent *RolloutAgent) Act(price, balance float64, prevPos int) int {
@@ -255,8 +304,8 @@ func (agent *RolloutAgent) Act(price, balance float64, prevPos int) int {
 	nextPrice /= float64(agent.NumSimulations)
 
 	pos := int(balance / price * agent.Leverage)
-	longPL := agent.ProfitLoss(price, nextPrice, prevPos, pos)
-	shortPL := agent.ProfitLoss(price, nextPrice, prevPos, -pos)
+	longPL := agent.profitLoss(price, nextPrice, prevPos, pos)
+	shortPL := agent.profitLoss(price, nextPrice, prevPos, -pos)
 
 	if longPL > shortPL {
 		return -pos
@@ -265,7 +314,7 @@ func (agent *RolloutAgent) Act(price, balance float64, prevPos int) int {
 	}
 }
 
-func (agent *RolloutAgent) ProfitLoss(price1, price2 float64, pos0, pos1 int) float64 {
+func (agent *RolloutAgent) profitLoss(price1, price2 float64, pos0, pos1 int) float64 {
 	posChg := math.Abs(float64(pos1 - pos0))
 	tcost := posChg * agent.TransactionCost
 
@@ -303,52 +352,46 @@ func run(config Config) error {
 		return errors.Wrap(err, "")
 	}
 
-	context := make([]int, 0, config.Depth)
-	for i := 0; i < config.Depth; i++ {
-		rk, err := data.Renko()
-		if err != nil {
-			return errors.Wrap(err, "")
-		}
-		context = append(context, rk.Direction)
+	wrapper := NewRenkoWrapper(config)
+	wrapper.Agent = &NextStep{Leverage: config.Leverage}
+	wrapper.Agent = &RolloutAgent{Threashold: config.Threashold, TransactionCost: config.TransactionCost, Leverage: config.Leverage, Depth: 5, NumSimulations: 4096}
+
+	prevCandle, err := data.Read()
+	if err != nil {
+		return errors.Wrap(err, "")
 	}
-	model := ctw.NewCTW(context)
-
-	// Train.
-	var prevRenko Renko
 	for {
-		rk, err := data.Renko()
+		wrapper.Observe(prevCandle)
+		candle, err := data.Read()
 		if err != nil {
 			return errors.Wrap(err, "")
 		}
-		model.Observe(rk.Direction)
+		prevCandle = candle
 
-		if rk.Time.After(time.Date(2015, time.January, 1, 0, 0, 0, 0, time.UTC)) {
-			prevRenko = rk
+		if candle.Time.After(time.Date(2015, time.January, 1, 0, 0, 0, 0, time.UTC)) {
 			break
 		}
 	}
 
-	// Test.
-	tester := NewTester(config, prevRenko)
-	agent := NextStep{Leverage: config.Leverage, Model: model}
-	// agent := RolloutAgent{Threashold: config.Threashold, TransactionCost: config.TransactionCost, Leverage: config.Leverage, reverter: ctw.NewCTWReverter(model), Depth: 5, NumSimulations: 4096}
+	tester := NewTester(config, prevCandle)
 	for {
 		prev := tester.History[len(tester.History)-1]
-		position := agent.Act(prev.Price, prev.Balance, prev.Position)
-
-		rk, err := data.Renko()
+		action, rk := wrapper.Act(prevCandle, prev.Balance, prev.Position)
+		candle, err := data.Read()
 		if err != nil {
 			if errors.Cause(err) == io.EOF {
 				break
 			}
 			return errors.Wrap(err, "")
 		}
+		prevCandle = candle
 
-		model.Observe(rk.Direction)
-		tester.Record(position, rk)
+		tester.Record(action, candle)
+
+		if rk != nil {
+			tester.PrintCSV()
+		}
 	}
-	log.Printf("accuracy: %f", tester.Corrects/tester.Trials)
-	log.Printf("contracts: %d", tester.Contracts())
 
 	return nil
 }

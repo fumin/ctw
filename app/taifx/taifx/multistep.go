@@ -104,19 +104,19 @@ func (d *Data) Consume() Bar {
 }
 
 type StatItem struct {
-	Time       time.Time
-	Price      float64
-	Action int
-	Position int
+	Time            time.Time
+	Price           float64
+	Action          int
+	Position        int
 	TransactionCost float64
-	ProfitLoss float64
-	Balance    float64
+	ProfitLoss      float64
+	Balance         float64
 }
 
 type Stat struct {
 	TransactionCost float64
-	Leverage float64
-	Items    []StatItem
+	Leverage        float64
+	Items           []StatItem
 }
 
 func NewStat(transactionCost, leverage float64, item StatItem) *Stat {
@@ -135,8 +135,8 @@ func (s *Stat) Record(action int, nextBar Bar) {
 	item.Time = nextBar.Time
 	item.Price = nextBar.Price
 	item.Action = action
-	item.Position = action * int(prevItem.Balance / prevItem.Price * s.Leverage)
-	item.TransactionCost = s.TransactionCost * math.Abs(float64(item.Position - prevItem.Position))
+	item.Position = action * int(prevItem.Balance/prevItem.Price*s.Leverage)
+	item.TransactionCost = s.TransactionCost * math.Abs(float64(item.Position-prevItem.Position))
 
 	profitLoss := nextBar.Price - prevItem.Price
 	profitLoss *= float64(item.Position)
@@ -165,14 +165,14 @@ func (a *nextStep) trade(model *ctw.CTW) int {
 	return 1
 }
 
-type mctsAgent struct{
+type mctsAgent struct {
 	priceDelta float64
-	tcost float64
-	algo *mcts.MCTS
-	states []mctsState
+	tcost      float64
+	algo       *mcts.MCTS
+	states     []mctsState
 }
 
-func newMCTSAgent(priceDelta, tcost float64, steps int) *mctsAgent{
+func newMCTSAgent(priceDelta, tcost float64, steps int) *mctsAgent {
 	agent := &mctsAgent{}
 	agent.priceDelta = priceDelta
 	agent.tcost = tcost
@@ -182,21 +182,21 @@ func newMCTSAgent(priceDelta, tcost float64, steps int) *mctsAgent{
 	return agent
 }
 
-type mctsState struct{
-	price float64
+type mctsState struct {
+	price    float64
 	position int
 }
 
-type mctsEnv struct{
-	priceDelta float64
-	tcost float64
-	reverter *ctw.CTWReverter
-	states []mctsState
+type mctsEnv struct {
+	priceDelta  float64
+	tcost       float64
+	reverter    *ctw.CTWReverter
+	states      []mctsState
 	stateCursor int
 }
 
 func (env *mctsEnv) NumActions() int {
-	if env.stateCursor + 1 >= len(env.states) {
+	if env.stateCursor+1 >= len(env.states) {
 		return 0
 	}
 	// no inter trades
@@ -223,10 +223,14 @@ func (env *mctsEnv) Act(action int) {
 	next.price = s.price + priceChg
 
 	switch action {
-	case 0: next.position = -1
-	case 1: next.position = 0
-	case 2: next.position = 1
-	default: log.Fatalf("%d", action)
+	case 0:
+		next.position = -1
+	case 1:
+		next.position = 0
+	case 2:
+		next.position = 1
+	default:
+		log.Fatalf("%d", action)
 	}
 
 	switch env.stateCursor {
@@ -244,7 +248,7 @@ func (env *mctsEnv) Act(action int) {
 func (env *mctsEnv) Reward() float64 {
 	s := env.states[env.stateCursor]
 	// Happens only for the root node.
-	if env.stateCursor - 1 < 0 {
+	if env.stateCursor-1 < 0 {
 		return 0
 	}
 	prev := env.states[env.stateCursor-1]
@@ -255,7 +259,7 @@ func (env *mctsEnv) Reward() float64 {
 	profitLoss := s.price - prev.price
 	profitLoss *= float64(s.position)
 
-//log.Printf("%+v %+v %f %f", prev, s, transactionCost, profitLoss)
+	//log.Printf("%+v %+v %f %f", prev, s, transactionCost, profitLoss)
 
 	return profitLoss - transactionCost
 }
@@ -270,7 +274,7 @@ func (agent *mctsAgent) trade(model *ctw.CTW, price float64, position int) int {
 	agent.algo.NewRoot()
 
 	prob0 := env.reverter.Prob0()
-//log.Printf("prob0 %f", prob0)
+	//log.Printf("prob0 %f", prob0)
 
 	for i := 0; i < 8192; i++ {
 		env.stateCursor = 0
@@ -278,7 +282,7 @@ func (agent *mctsAgent) trade(model *ctw.CTW, price float64, position int) int {
 		// Since our model follows brownian motion pretty closely, and the price is roughly 10000, priceDelta 0.001, steps 24,
 		// the value is 10000 * 0.001 * sqrt(24) == 49.
 		var exploration float64 = 100
-//log.Printf("rollout")
+		//log.Printf("rollout")
 		agent.algo.Rollout(env, exploration)
 
 		// Reset state.
@@ -296,10 +300,14 @@ func (agent *mctsAgent) trade(model *ctw.CTW, price float64, position int) int {
 	action := agent.algo.BestAction()
 	var trade int
 	switch action {
-	case 0: trade = -1
-	case 1: trade = 0
-	case 2: trade = 1
-	default: log.Fatalf("%d", action)
+	case 0:
+		trade = -1
+	case 1:
+		trade = 0
+	case 2:
+		trade = 1
+	default:
+		log.Fatalf("%d", action)
 	}
 
 	agent.algo.ReleaseMem()
@@ -347,7 +355,7 @@ func run(config Config) error {
 	step := 0
 	for {
 		var action int
-		if step % 24 == 0 {
+		if step%24 == 0 {
 			curItem := testStat.Items[len(testStat.Items)-1]
 			action = agent.trade(model, curItem.Price, curItem.Position)
 		} else {
@@ -381,11 +389,11 @@ func run(config Config) error {
 }
 
 type Config struct {
-	Data  string
-	PriceDelta float64
+	Data            string
+	PriceDelta      float64
 	TransactionCost float64
-	Depth int
-	Leverage float64
+	Depth           int
+	Leverage        float64
 }
 
 func parseConfig() (Config, error) {

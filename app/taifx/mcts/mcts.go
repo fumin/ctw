@@ -1,27 +1,27 @@
 package mcts
 
-import(
+import (
 	"log"
 	"math"
 	"sync"
-//	"os"
+	//	"os"
 
 	"github.com/pkg/errors"
 )
 
-type Environment interface{
+type Environment interface {
 	NumActions() int
 	Act(int)
 	Reward() float64
 }
 
-type node struct{
+type node struct {
 	children []*node
-	value float64
-	n float64
+	value    float64
+	n        float64
 }
 
-type MCTS struct{
+type MCTS struct {
 	pool sync.Pool
 	root *node
 }
@@ -42,7 +42,7 @@ func (algo *MCTS) BestAction() int {
 		vs := make([]float64, 0, len(algo.root.children))
 		for _, child := range algo.root.children {
 			ns = append(ns, int(child.n))
-			vs = append(vs, child.value / child.n)
+			vs = append(vs, child.value/child.n)
 		}
 		//log.Printf("%+v %+v", vs, ns)
 		//os.Exit(0)
@@ -65,12 +65,12 @@ func (algo *MCTS) NewRoot() {
 }
 
 func (algo *MCTS) Rollout(env Environment, exploration float64) {
-	type nodeValue struct{
-		node *node
+	type nodeValue struct {
+		node   *node
 		reward float64
 	}
 
-//nowAct := 0
+	//nowAct := 0
 
 	traversal := make([]nodeValue, 0)
 	curNode := algo.root
@@ -89,18 +89,18 @@ func (algo *MCTS) Rollout(env Environment, exploration float64) {
 		env.Act(action)
 		curNode = curNode.children[action]
 
-//nowAct = action
+		//nowAct = action
 	}
 
 	var accReward float64
-	for i := len(traversal)-1; i >= 0; i-- {
+	for i := len(traversal) - 1; i >= 0; i-- {
 		node := traversal[i].node
 		reward := traversal[i].reward
 
 		accReward += reward
 		node.value += accReward
 	}
-//log.Printf("trrtr %+v %d c0: %+v, chiold2: %+v", traversal, nowAct, algo.root.children[0], algo.root.children[2])
+	//log.Printf("trrtr %+v %d c0: %+v, chiold2: %+v", traversal, nowAct, algo.root.children[0], algo.root.children[2])
 }
 
 func (algo *MCTS) ReleaseMem() {
@@ -120,14 +120,14 @@ func selectAction(n *node, exploration float64) int {
 	if child.n == 0 {
 		return maxA
 	}
-	maxV := child.value/child.n + exploration * math.Sqrt(math.Log(n.n)/child.n)
+	maxV := child.value/child.n + exploration*math.Sqrt(math.Log(n.n)/child.n)
 
 	for a := 1; a < len(n.children); a++ {
 		child := n.children[a]
 		if child.n == 0 {
 			return a
 		}
-		childValue := child.value/child.n + exploration * math.Sqrt(math.Log(n.n)/child.n)
+		childValue := child.value/child.n + exploration*math.Sqrt(math.Log(n.n)/child.n)
 
 		if childValue > maxV {
 			maxA = a
