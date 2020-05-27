@@ -19,6 +19,7 @@ import (
 
 var (
 	flagConfig = flag.String("c", `{
+		"Seed": 0,
                 "Data": "/Users/mac/Desktop/es_1m.csv",
 		"Threashold": 0.002,
                 "TransactionCost": 0.05,
@@ -298,7 +299,11 @@ func (agent *RolloutAgent) Act(price, balance float64, prevPos int) int {
 	agent.tick = 0
 
 	var nextPrice float64
+	prob0 := agent.model.Prob0()
 	for i := 0; i < agent.NumSimulations; i++ {
+		if agent.model.Prob0() != prob0 {
+			log.Fatalf("%f %f", agent.model.Prob0(), prob0)
+		}
 		nextPrice += agent.rollout(price)
 	}
 	nextPrice /= float64(agent.NumSimulations)
@@ -354,7 +359,7 @@ func run(config Config) error {
 
 	wrapper := NewRenkoWrapper(config)
 	wrapper.Agent = &NextStep{Leverage: config.Leverage}
-	wrapper.Agent = &RolloutAgent{Threashold: config.Threashold, TransactionCost: config.TransactionCost, Leverage: config.Leverage, Depth: 5, NumSimulations: 4096}
+	wrapper.Agent = &RolloutAgent{Threashold: config.Threashold, TransactionCost: config.TransactionCost, Leverage: config.Leverage, Depth: 10, NumSimulations: 4096}
 
 	prevCandle, err := data.Read()
 	if err != nil {
@@ -368,7 +373,7 @@ func run(config Config) error {
 		}
 		prevCandle = candle
 
-		if candle.Time.After(time.Date(2015, time.January, 1, 0, 0, 0, 0, time.UTC)) {
+		if candle.Time.After(time.Date(2017, time.January, 1, 0, 0, 0, 0, time.UTC)) {
 			break
 		}
 	}
@@ -397,6 +402,7 @@ func run(config Config) error {
 }
 
 type Config struct {
+	Seed            int64
 	Data            string
 	Threashold      float64
 	TransactionCost float64
@@ -426,6 +432,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("%+v", err)
 	}
+	rand.Seed(config.Seed)
 	if err := run(config); err != nil {
 		log.Fatalf("%+v", err)
 	}

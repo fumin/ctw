@@ -49,7 +49,7 @@ type snapshot struct {
 }
 
 func revert(traversed []snapshot) {
-	for _, ss := range traversed {
+	for i, ss := range traversed {
 		node := ss.node
 		node.lktp = ss.state.lktp
 		node.a = ss.state.a
@@ -61,17 +61,17 @@ func revert(traversed []snapshot) {
 		// This happens when our predictions are faily consistent with the eventually arriving data.
 		// Here we emphasize performance by not doing this memory saving optimization.
 		//
-		// if i < len(traversed)-2 {
-		// 	next := traversed[i+1]
-		// 	if next.IsNew {
-		// 		if next.Node == node.right {
-		// 			node.right = nil
-		// 		} else {
-		// 			node.left = nil
-		// 		}
-		// 		break
-		// 	}
-		// }
+		if i < len(traversed)-1 {
+			next := traversed[i+1]
+			if next.isNew {
+				if next.node == node.right {
+					node.right = nil
+				} else {
+					node.left = nil
+				}
+				break
+			}
+		}
 	}
 }
 
